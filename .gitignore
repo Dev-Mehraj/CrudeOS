@@ -1,0 +1,15 @@
+```
+# Build artifacts and generated files
+build/
+crude_os_build/
+*.log
+*.tmp
+
+# Compressed archives
+*.tar.gz
+*.gz
+
+# System files
+.DS_Store
+Thumbs.db
+```
