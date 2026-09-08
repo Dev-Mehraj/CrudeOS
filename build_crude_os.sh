@@ -976,7 +976,7 @@ HOME_URL="https://github.com/Dev-Mehraj/Project14"
 BUG_REPORT_URL="https://github.com/Dev-Mehraj/Project14/issues"
 EOF
 
-cat > "$ROOTFS/etc/issue" <<'ISSUE'
+cat > "\$ROOTFS/etc/issue" <<'ISSUE'
 CrudeOS Aqua \r (\l) - Live Session
 ISSUE
 
