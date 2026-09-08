@@ -1,128 +1,211 @@
 #!/usr/bin/env bash
-# CrudeOS ISO Builder
-#
-# Builds a bootable CrudeOS XFCE live ISO using Alpine's supported mkimage
-# workflow inside an Alpine builder container.
+# CrudeOS - canonical Alpine-based XFCE live ISO builder
+# GUI included: XFCE + Docklike + Whisker + Picom + dark Adwaita theme
 #
 # Host requirements:
-#   - Docker OR Podman
+#   Docker or Podman
 #
-# Usage:
+# Build:
+#   chmod +x build_crude_os.sh
 #   ./build_crude_os.sh
-#   CRUDEOS_VERSION=1.0.0 ./build_crude_os.sh
 #
-# The resulting ISO is written to:
-#   ./dist/crudeos-x86_64-<version>.iso
+# Optional:
+#   CRUDEOS_VERSION=1.0.0 ALPINE_VERSION=3.24.1 ./build_crude_os.sh
 
 set -Eeuo pipefail
 
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-DIST_DIR="$ROOT_DIR/dist"
-WORK_DIR="$ROOT_DIR/.crudeos-build"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+WORK="$ROOT/.crudeos-build"
+OUT="$ROOT/dist"
 
 ALPINE_VERSION="${ALPINE_VERSION:-3.24.1}"
 ALPINE_BRANCH="${ALPINE_BRANCH:-v3.24}"
 CRUDEOS_VERSION="${CRUDEOS_VERSION:-1.0.0}"
 CRUDEOS_CODENAME="${CRUDEOS_CODENAME:-Forge}"
-CRUDEOS_ARCH="${CRUDEOS_ARCH:-x86_64}"
+ARCH="${ARCH:-x86_64}"
 CONTAINER_IMAGE="${CONTAINER_IMAGE:-alpine:${ALPINE_VERSION}}"
 
-mkdir -p "$DIST_DIR" "$WORK_DIR"
+mkdir -p "$WORK" "$OUT"
 
 die() {
     echo "ERROR: $*" >&2
     exit 1
 }
 
-find_runtime() {
-    if command -v docker >/dev/null 2>&1; then
-        printf '%s\n' docker
-    elif command -v podman >/dev/null 2>&1; then
-        printf '%s\n' podman
-    else
-        die "Docker or Podman is required."
-    fi
-}
-
-RUNTIME="$(find_runtime)"
+if command -v docker >/dev/null 2>&1; then
+    RUNTIME=docker
+elif command -v podman >/dev/null 2>&1; then
+    RUNTIME=podman
+else
+    die "Docker or Podman is required."
+fi
 
 echo "=============================================="
-echo "             CrudeOS ISO Builder"
+echo "            CrudeOS Live ISO Builder"
 echo "=============================================="
-echo "Alpine base : $ALPINE_VERSION"
-echo "Architecture: $CRUDEOS_ARCH"
-echo "CrudeOS     : $CRUDEOS_VERSION ($CRUDEOS_CODENAME)"
-echo "Container   : $CONTAINER_IMAGE"
-echo "Runtime     : $RUNTIME"
-echo
+echo "CrudeOS version : $CRUDEOS_VERSION"
+echo "Codename        : $CRUDEOS_CODENAME"
+echo "Alpine base     : $ALPINE_VERSION"
+echo "Architecture    : $ARCH"
+echo "Container       : $CONTAINER_IMAGE"
+echo "Runtime         : $RUNTIME"
+echo "=============================================="
 
-cat > "$WORK_DIR/profile" <<'PROFILE'
+cat > "$WORK/mkimg.crudeos.sh" <<'PROFILE'
 #!/bin/sh
 
 profile_crudeos() {
     profile_standard
 
     title="CrudeOS"
-    desc="CrudeOS ${CRUDEOS_VERSION} - lightweight XFCE desktop"
-
-    # Keep Alpine's tested kernel/initramfs generation.
+    desc="CrudeOS - lightweight, polished XFCE desktop"
     kernel_flavors="lts"
 
-    # Desktop, networking, firmware and useful desktop applications.
     apks="$apks
-        alpine-base
         linux-lts
         linux-firmware
+
+        # Core desktop
         xfce4
-        xfce4-goodies
-        lightdm
-        lightdm-gtk-greeter
-        networkmanager
-        network-manager-applet
+        xfce4-panel
+        xfce4-session
+        xfce4-settings
+        xfwm4
+        thunar
+        thunar-volman
+        tumbler
+
+        # CrudeOS Aqua GUI
+        xfce4-docklike-plugin
+        xfce4-whiskermenu-plugin
+        xfce4-pulseaudio-plugin
+        xfce4-statusnotifier-plugin
+        xfce4-power-manager
+        xfce4-screenshooter
+        xfce4-taskmanager
+        xfce4-terminal
+        xfce4-notifyd
+        xfce-polkit
+        adw-gtk3
+        adwaita-xfce-icon-theme
+        picom
+
+        # Hardware / session
         dbus
         dbus-x11
         elogind
         polkit-elogind
+        networkmanager
+        network-manager-applet
+        mesa-dri-gallium
+        mesa-egl
+        mesa-gl
+        libinput
         xf86-input-libinput
+
+        # Common drivers
         xf86-video-amdgpu
         xf86-video-intel
         xf86-video-nouveau
-        mesa-dri-gallium
-        mesa-vulkan-intel
-        mesa-vulkan-radeon
-        firefox-esr
-        thunar-volman
-        tumbler
-        ristretto
-        mousepad
-        parole
-        xarchiver
-        pavucontrol
-        alsa-utils
+
+        # Audio
         pipewire
         pipewire-pulse
         wireplumber
-        gnome-keyring
+        pavucontrol
+        alsa-utils
+
+        # Desktop utilities
+        xarchiver
+        mousepad
+        ristretto
         htop
         git
-        vim
+        curl
+
+        # Browser
+        firefox-esr
     "
 
-    # Generate the CrudeOS configuration overlay used by the live system.
-    apkovl="/work/genapkovl-crudeos.sh"
-}
-PROFILE
-chmod +x "$WORK_DIR/profile"
+    apkovl="genapkovl-crudeos.sh"
 
-cat > "$WORK_DIR/genapkovl-crudeos.sh" <<'OVERLAY'
+    # Keep the compositor deliberately light: the goal is good frame pacing,
+    # not expensive blur/shadow effects.
+    kernel_cmdline="$kernel_cmdline quiet loglevel=3"
+}
+
+profile_crudeos
+PROFILE
+
+cat > "$WORK/genapkovl-crudeos.sh" <<'OVERLAY'
 #!/bin/sh
 set -eu
 
 tmp="$1"
 
-mkdir -p "$tmp/etc/apk"
-mkdir -p "$tmp/etc/lightdm"
-mkdir -p "$tmp/etc/profile.d"
+mkdir -p \
+    "$tmp/etc/apk" \
+    "$tmp/etc/xdg/autostart" \
+    "$tmp/etc/xdg/picom" \
+    "$tmp/etc/xdg/xfce4/xfconf/xfce-perchannel-xml" \
+    "$tmp/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml" \
+    "$tmp/etc/skel/.config/gtk-3.0" \
+    "$tmp/etc/skel/.config/picom"
+
+# The packages are installed in the image. /etc/apk/world makes the desktop
+# persistent/visible to Alpine's package system in the generated live image.
+cat > "$tmp/etc/apk/world" <<'WORLD'
+alpine-base
+linux-lts
+linux-firmware
+xfce4
+xfce4-panel
+xfce4-session
+xfce4-settings
+xfwm4
+thunar
+thunar-volman
+tumbler
+xfce4-docklike-plugin
+xfce4-whiskermenu-plugin
+xfce4-pulseaudio-plugin
+xfce4-statusnotifier-plugin
+xfce4-power-manager
+xfce4-screenshooter
+xfce4-taskmanager
+xfce4-terminal
+xfce4-notifyd
+xfce-polkit
+adw-gtk3
+adwaita-xfce-icon-theme
+picom
+dbus
+dbus-x11
+elogind
+polkit-elogind
+networkmanager
+network-manager-applet
+mesa-dri-gallium
+mesa-egl
+mesa-gl
+libinput
+xf86-input-libinput
+xf86-video-amdgpu
+xf86-video-intel
+xf86-video-nouveau
+pipewire
+pipewire-pulse
+wireplumber
+pavucontrol
+alsa-utils
+xarchiver
+mousepad
+ristretto
+htop
+git
+curl
+firefox-esr
+WORLD
 
 cat > "$tmp/etc/os-release" <<EOF
 NAME="CrudeOS"
@@ -136,127 +219,151 @@ BUG_REPORT_URL="https://github.com/Dev-Mehraj/Project14/issues"
 SUPPORT_URL="https://github.com/Dev-Mehraj/Project14/issues"
 EOF
 
-cat > "$tmp/etc/hostname" <<'EOF'
+cat > "$tmp/etc/hostname" <<'HOST'
 crudeos
-EOF
+HOST
 
-cat > "$tmp/etc/motd" <<'EOF'
+cat > "$tmp/etc/motd" <<'MOTD'
    ____                 _      ____   ____
   / ___|_ __ _   _  __| | ___/ ___| / ___|
  | |   | '__| | | |/ _` |/ _ \___ \| |
  | |___| |  | |_| | (_| |  __/___) | |___
   \____|_|   \__,_|\__,_|\___|____/ \____|
 
-Welcome to CrudeOS.
-A lightweight desktop system built on the Alpine Linux base.
-EOF
+             Welcome to CrudeOS
+       Lightweight. Fast. Yours.
+MOTD
 
-cat > "$tmp/etc/lightdm/lightdm.conf" <<'EOF'
-[Seat:*]
-user-session=xfce
-greeter-session=lightdm-gtk-greeter
-EOF
+cat > "$tmp/etc/xdg/picom/picom.conf" <<'PICOM'
+backend = "glx";
+vsync = true;
+use-damage = true;
 
-cat > "$tmp/etc/profile.d/crudeos.sh" <<'EOF'
-export CRUDEOS_NAME="CrudeOS"
-export CRUDEOS_VERSION="__CRUDEOS_VERSION__"
-EOF
-sed -i "s/__CRUDEOS_VERSION__/${CRUDEOS_VERSION}/g" "$tmp/etc/profile.d/crudeos.sh"
+# Keep frame pacing smooth without expensive blur/shadow passes.
+shadow = false;
+blur-background = false;
+fading = true;
+fade-in-step = 0.03;
+fade-out-step = 0.03;
+fade-delta = 8;
 
-# Tell OpenRC to start the desktop stack.
+inactive-opacity = 0.94;
+active-opacity = 1.0;
+frame-opacity = 0.96;
+
+wintypes:
+{
+    tooltip = { fade = true; shadow = false; };
+    dock = { shadow = false; };
+    popup_menu = { fade = true; };
+    dropdown_menu = { fade = true; };
+};
+PICOM
+
+cat > "$tmp/etc/xdg/autostart/crudeos-picom.desktop" <<'AUTOSTART'
+[Desktop Entry]
+Type=Application
+Name=CrudeOS Compositor
+Comment=Lightweight synchronized compositor
+Exec=picom --config /etc/xdg/picom/picom.conf
+OnlyShowIn=XFCE;
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+AUTOSTART
+
+cat > "$tmp/etc/skel/.config/gtk-3.0/settings.ini" <<'GTK'
+[Settings]
+gtk-theme-name=adw-gtk3-dark
+gtk-icon-theme-name=Adwaita
+gtk-font-name=DejaVu Sans 10
+gtk-application-prefer-dark-theme=true
+gtk-enable-animations=true
+gtk-decoration-layout=close,minimize,maximize:
+GTK
+
+cat > "$tmp/etc/skel/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml" <<'XFWM'
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfwm4" version="1.0">
+  <property name="general" type="empty">
+    <property name="use_compositing" type="bool" value="false"/>
+    <property name="vblank_mode" type="string" value="glx"/>
+    <property name="title_alignment" type="string" value="center"/>
+    <property name="button_layout" type="string" value="O|HMC"/>
+    <property name="frame_opacity" type="int" value="100"/>
+    <property name="inactive_opacity" type="int" value="94"/>
+    <property name="inactive_text_opacity" type="int" value="100"/>
+  </property>
+</channel>
+XFWM
+
+# Start the services needed for a usable graphical live system.
 rc_add dbus default
+rc_add elogind default
 rc_add networkmanager default
+
+# LightDM starts the graphical login when present.
 rc_add lightdm default
 OVERLAY
-chmod +x "$WORK_DIR/genapkovl-crudeos.sh"
 
-# Generate a Docker/Podman build script.
-cat > "$WORK_DIR/build-inside.sh" <<'INNER'
-#!/bin/sh
+chmod +x "$WORK/mkimg.crudeos.sh" "$WORK/genapkovl-crudeos.sh"
+
+"$RUNTIME" pull "$CONTAINER_IMAGE"
+
+# Alpine's documented custom-image workflow uses mkimage.sh from aports.
+"$RUNTIME" run --rm --privileged \
+    -e APORTS_TAG="$ALPINE_BRANCH" \
+    -e CRUDEOS_VERSION="$CRUDEOS_VERSION" \
+    -e CRUDEOS_CODENAME="$CRUDEOS_CODENAME" \
+    -e CRUDEOS_ARCH="$ARCH" \
+    -v "$WORK:/work" \
+    "$CONTAINER_IMAGE" /bin/sh -c '
 set -eu
+apk add --no-cache alpine-sdk alpine-conf abuild syslinux xorriso squashfs-tools grub mtools git
 
-apk update
-apk add --no-cache \
-    alpine-sdk \
-    bash \
-    git \
-    mtools \
-    grub \
-    syslinux \
-    xorriso \
-    squashfs-tools
-
-mkdir -p /work/aports /work/out
-cd /work
-
+mkdir -p /work/aports /work/out /work/root
 if [ ! -d /work/aports/.git ]; then
-    git clone --depth=1 --branch "$APORTS_BRANCH" \
+    git clone --depth=1 --branch "$APORTS_TAG" \
         https://gitlab.alpinelinux.org/alpine/aports.git /work/aports
 fi
 
-# Ensure the builder has an APK signing key for image creation.
-if ! find /etc/apk/keys -maxdepth 1 -type f -name '*.rsa.pub' | grep -q .; then
-    abuild-keygen -a -n
+# Build-image tools need an abuild key available.
+mkdir -p /root/.abuild
+if ! find /etc/apk/keys -maxdepth 1 -type f -name "*.rsa.pub" | grep -q .; then
+    abuild-keygen -ain
 fi
 
-cp /work/profile /work/aports/scripts/mkimg.crudeos.sh
-cp /work/genapkovl-crudeos.sh /work/genapkovl-crudeos.sh
+cp /work/mkimg.crudeos.sh /work/aports/scripts/mkimg.crudeos.sh
+cp /work/genapkovl-crudeos.sh /work/aports/scripts/genapkovl-crudeos.sh
 chmod +x /work/aports/scripts/mkimg.crudeos.sh
-chmod +x /work/genapkovl-crudeos.sh
+chmod +x /work/aports/scripts/genapkovl-crudeos.sh
 
+cd /work/aports
 export PROFILENAME=crudeos
 
-# Pass the version into the profile/overlay generator.
-export CRUDEOS_VERSION
-export CRUDEOS_CODENAME
-
-# Build with Alpine's official image generator.
-sh /work/aports/scripts/mkimage.sh \
+sh ./scripts/mkimage.sh \
     --tag "$APORTS_TAG" \
     --outdir /work/out \
     --workdir /work/work \
     --arch "$CRUDEOS_ARCH" \
-    --profile "$PROFILENAME" \
-    --repository "https://dl-cdn.alpinelinux.org/alpine/${APORTS_TAG}/main" \
-    --repository "https://dl-cdn.alpinelinux.org/alpine/${APORTS_TAG}/community"
+    --profile crudeos \
+    --repository "https://dl-cdn.alpinelinux.org/alpine/$APORTS_TAG/main" \
+    --repository "https://dl-cdn.alpinelinux.org/alpine/$APORTS_TAG/community"
 
-echo
-echo "Generated images:"
-find /work/out -maxdepth 1 -type f -printf '%f\n' | sort
-INNER
-chmod +x "$WORK_DIR/build-inside.sh"
+echo "=== generated images ==="
+find /work/out -maxdepth 1 -type f -printf "%f\n" | sort
+'
 
-# Run with enough privileges for mkimage's filesystem/image operations.
-"$RUNTIME" pull "$CONTAINER_IMAGE"
+ISO="$(find "$WORK/out" -maxdepth 1 -type f -iname '*.iso' | head -n 1 || true)"
+[ -n "$ISO" ] || die "Build finished, but no ISO file was generated."
 
-"$RUNTIME" run --rm --privileged \
-    -e APORTS_BRANCH="$ALPINE_BRANCH" \
-    -e APORTS_TAG="$ALPINE_BRANCH" \
-    -e CRUDEOS_VERSION="$CRUDEOS_VERSION" \
-    -e CRUDEOS_CODENAME="$CRUDEOS_CODENAME" \
-    -e CRUDEOS_ARCH="$CRUDEOS_ARCH" \
-    -v "$WORK_DIR:/work" \
-    "$CONTAINER_IMAGE" \
-    /work/build-inside.sh
-
-# Prefer the generated ISO and give it a stable project name.
-ISO="$(find "$DIST_DIR" "$WORK_DIR/out" -maxdepth 1 -type f \
-    \( -name '*.iso' -o -name '*.iso.xz' \) 2>/dev/null | head -n1 || true)"
-
-if [ -z "$ISO" ]; then
-    # mkimage may place the ISO directly in /work/out under a profile-derived name.
-    ISO="$(find "$WORK_DIR/out" -maxdepth 1 -type f -name '*.iso' | head -n1 || true)"
-fi
-
-[ -n "$ISO" ] || die "mkimage completed, but no ISO was found."
-
-FINAL="$DIST_DIR/crudeos-${CRUDEOS_VERSION}-${CRUDEOS_ARCH}.iso"
+FINAL="$OUT/crudeos-${CRUDEOS_VERSION}-${ARCH}.iso"
 cp -f "$ISO" "$FINAL"
 
 echo
 echo "=============================================="
-echo "Build complete."
+echo "CrudeOS build complete!"
 echo "ISO: $FINAL"
+echo
 echo "SHA256:"
 sha256sum "$FINAL"
 echo "=============================================="
