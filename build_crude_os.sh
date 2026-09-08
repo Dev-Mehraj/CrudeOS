@@ -123,6 +123,12 @@ network-manager-applet
 # Default Web Browser & Utilities
 firefox-esr
 xarchiver
+
+# Crude OS Setup (Calamares GUI installer, rebranded)
+calamares
+calamares-extensions
+polkit
+parted
 EOF
 
 # ------------------------------------------------------------------------------
@@ -161,6 +167,9 @@ trap cleanup EXIT
 
 # Invoke configuration generator inside staging root
 /work/install-crudeos-gui.sh "$tmp"
+
+# Install & rebrand the Calamares GUI installer as "Crude OS Setup"
+/work/install-crudeos-installer.sh "$tmp"
 
 # Generate APK world file
 grep -v '^#' /work/packages.txt | sed '/^[[:space:]]*$/d' > "$tmp/etc/apk/world"
