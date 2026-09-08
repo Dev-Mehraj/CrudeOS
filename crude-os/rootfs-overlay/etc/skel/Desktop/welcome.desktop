@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Crude OS Welcome
+Comment=Welcome to Crude OS
+Exec=xfce4-terminal -e "neofetch; echo ''; echo 'Welcome to Crude OS!'; bash"
+Icon=preferences-desktop-theme
+Terminal=true
+Categories=Utility;System;
+StartupNotify=true

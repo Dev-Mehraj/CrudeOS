@@ -1,0 +1,9 @@
+NAME="Crude OS"
+VERSION="1.0"
+ID=crudeos
+ID_LIKE=alpine
+PRETTY_NAME="Crude OS 1.0"
+ANSI_COLOR="1;34"
+HOME_URL="https://crudeos.example.com"
+SUPPORT_URL="https://crudeos.example.com/support"
+BUG_REPORT_URL="https://crudeos.example.com/bugs"
