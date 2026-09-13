@@ -1,0 +1,33 @@
+# Crude OS Setup — Calamares branding (Aqua theme)
+componentName: crudeos
+
+welcomeStyleCalamares: true
+welcomeExpandingLogo: true
+
+windowExpanding: normal
+windowSize: 1024px,600px
+
+strings:
+    productName:         "Crude OS"
+    shortProductName:    "Crude OS"
+    version:              "1.0"
+    shortVersion:         "1.0"
+    versionedName:        "Crude OS 1.0 (Aqua)"
+    shortVersionedName:   "Crude OS 1.0"
+    bootloaderEntryName:  "Crude OS"
+    productUrl:           "https://crudeos.example.com"
+    supportUrl:           "https://crudeos.example.com/support"
+    releaseNotesUrl:      "https://crudeos.example.com/notes"
+
+images:
+    productLogo:         "crudeos-logo.svg"
+    productIcon:          "crudeos-logo.svg"
+    productWelcome:       "crudeos-welcome.svg"
+
+slideshow: "show.qml"
+
+style:
+   sidebarBackground:    "#1c1f26"
+   sidebarText:          "#e6e6e6"
+   sidebarTextSelect:    "#3ecbff"
+   sidebarTextHighlight: "#2b2f38"
